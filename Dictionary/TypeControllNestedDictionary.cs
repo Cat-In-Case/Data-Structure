@@ -5,6 +5,7 @@ using UnityEditor.Build.Player;
 using UnityEngine;
 using UnityEngine.SocialPlatforms.Impl;
 
+
 [System.Serializable]
 public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 {
@@ -26,22 +27,36 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
         }
         public Key key; public Value value;
     }
-    [SerializeField] private List<KVP<string, List<KVP<K, V>>>> internalData = new List<KVP<string, List<KVP<K, V>>>>();
-
+    [System.Serializable]
+    private class StringToPairList
+    {
+        internal StringToPairList(string key, List<KVP<K, V>> list)
+        {
+            this.key = key;
+            this.pairList = list;
+        }
+        public string key;
+        public List<KVP<K, V>> pairList;
+    }
+    //이게 문제임
+    [SerializeField] private List<StringToPairList> internalData = new List<StringToPairList>();
     public void OnBeforeSerialize()
-    { 
+    {
+        if (_internal == null)
+            return;
         if(internalData == null)
         {
-            internalData = new List<KVP<string, List<KVP<K, V>>>>();
+            internalData = new List<StringToPairList>();
         }
-        else
+        else    //이게 문제임
         {
             for (int i = 0; i < internalData.Count; i++)
             {
-                internalData[i].value.Clear();
+                internalData[i].pairList.Clear();       //해제 처리
+                internalData[i].pairList = null;
+                internalData[i].key = null;
             }
             internalData.Clear();
-
         }
 
         var ks = _internal.Keys;
@@ -62,16 +77,15 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
                 {
                     list.Add(new KVP<K, V>());
                 }
-
             }
-            internalData.Add(new KVP<string, List<KVP<K, V>>>(keyName, list));
+            internalData.Add(new StringToPairList(keyName, list));
         }
 
     }
 
     public void OnAfterDeserialize()
     {
-
+        //변경 금지 처리
     }
 #else
     public void OnBeforeSerialize() { }
@@ -88,29 +102,37 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public IEnumerable<KeyValuePair<K, V>> NestedPair(Type type) { return _internal[type]; }
 
-    public bool TryGetValue(Type type)
+    public bool TryGetValue(Type type, out SerializableConcurrentDictioanry<K, V> value)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지
+        value = null;
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
-        return _internal.TryGetValue(typeof(Type), out var value);
+        if (_internal.ContainsKey(type) == false)
+            return false;
+        return _internal.TryGetValue(typeof(Type), out value);
     }
-    public bool TryNestedGetValue(Type type)
+    public bool TryNestedGetValue(Type type, K k, out V v)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지
+        v = default(V);
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
-        return _internal.TryGetValue(typeof(Type), out var value);
+        if (_internal.ContainsKey(type) == false)
+            return false;
+        if (_internal[type].ContainsKey(k) == false)
+            return false;
+        return _internal[type].TryGetValue(k, out v);
     }
 
     public bool ContainsKey(Type type)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지      
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
-        
+
         return _internal.ContainsKey(type);
     }
     public bool NestedContainsKey(Type type, K k)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지      
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
 
         if (ContainsKey(type) == false)
@@ -136,8 +158,9 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedAdd(Type type, K k, V v)   //데이터를 추가
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지
-            return false;    
+        if (typeof(K).IsAssignableFrom(type)  == false)  //K와 동일한지     
+            return false;      
+     
         if (_internal.ContainsKey(type) == false)
         {
             return false;
@@ -145,14 +168,14 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
         if (_internal[type].ContainsKey(k) == true)     //업데이트를 해야됨
             return false;
-
+        Debug.Log("Added");
         _internal[type].Add(k, v);
         return true;
     }
 
     public bool TryNestedAdd(Type type, KeyValuePair<K, V> pair)   //데이터를 추가
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
 
         if (_internal.ContainsKey(type) == false)
@@ -170,9 +193,9 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public bool TryAddOrUpdate(Type type, IDictionary<K, V> dic)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
-        if(_internal.ContainsKey(type) == true)     // 업데이트
+        if (_internal.ContainsKey(type) == true)     // 업데이트
         {
             var s = _internal[type];
             s.Clear();
@@ -187,7 +210,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryAddOrUpdate(Type type, SerializableConcurrentDictioanry<K, V> dic)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == true)     // 업데이트
         {
@@ -203,7 +226,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public bool TryNestedAddOrUpdate(Type type, K k , V v)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -214,7 +237,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedAddOrUpdate(Type type, KeyValuePair<K, V> pair)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -225,7 +248,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public bool TryRemove(Type type)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -233,7 +256,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedRemove(Type type, K k) 
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -244,7 +267,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public bool TryUpdate(Type type, IDictionary<K, V> dic)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -252,7 +275,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryUpdate(Type type, SerializableConcurrentDictioanry<K, V> dic)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -260,7 +283,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedUpdate(Type type, K k, V v)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -270,7 +293,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedUpdate(Type type, KeyValuePair<K, V> pair)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -281,7 +304,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
 
     public bool TryClear(Type type)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
@@ -290,7 +313,7 @@ public class TypeControllNestedDictionary<K, V> : ISerializationCallbackReceiver
     }
     public bool TryNestedClear(Type type, K k)
     {
-        if (typeof(K).IsAssignableFrom(type))  //K와 동일한지     
+        if (typeof(K).IsAssignableFrom(type) == false)  //K와 동일한지     
             return false;
         if (_internal.ContainsKey(type) == false)
             return false;
