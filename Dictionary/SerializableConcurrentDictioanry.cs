@@ -4,33 +4,37 @@ using System.Collections.Generic;
 using ArchiementTest;
 using UnityEngine;
 using System;
-using static UnityEditor.Progress;
-using static UnityEngine.Rendering.DebugUI;
 using Newtonsoft.Json.Linq;
 using System.Linq;
 
 //Immutable할 이유가 없음
-public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallbackReceiver, IDictionary<Key, Value>, IReadOnlyDictionary<Key, Value>
+[System.Serializable]
+public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallbackReceiver, IDictionary<Key, Value>, IReadOnlyDictionary<Key, Value>, IEnumerable<KeyValuePair<Key, Value>>
 {
     //Serializable
 #if UNITY_EDITOR
     [System.Serializable]
     private struct KVP<Key, Value>
     {
-        internal KVP(KeyValuePair<Key, Value> pair)
+        public KVP(KeyValuePair<Key, Value> pair)
         {
             key = pair.Key;
             value = pair.Value;
         }
-        internal Key key; internal Value value;
+        public Key key; public Value value;
     }
     [Header("Immutable Data(Can not change)")]
     [SerializeField] private List<KVP<Key, Value>> _serializedData;
     public void OnBeforeSerialize()     // Dic => List
     {
-        if (_serializedData == null || _internal == null)
+        if (_internal == null)
             return;
-        _serializedData.Clear();
+        if(_serializedData == null)
+            _serializedData = new List<KVP<Key, Value>>();
+        else
+        {
+            _serializedData.Clear();
+        }
         IEnumerable<KeyValuePair<Key, Value>> ienumerable = _internal;
         foreach (var kvp in ienumerable)
         {
@@ -67,8 +71,6 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
     {
         if (dic == null)
             throw new NullReferenceException("Dictionary is Null");
-        if(dic.Count == 0)
-            throw new Exception("Dictionary is Empty");
         ConcurrentDictionary<Key, Value> cd = new ConcurrentDictionary<Key, Value>(dic);
         return new SerializableConcurrentDictioanry<Key, Value>(cd);
     }
@@ -76,8 +78,6 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
     {
         if (pairs == null)
             throw new NullReferenceException("Dictionary is Null");
-        if (pairs.Count() == 0)
-            throw new Exception("Dictionary is Empty");
         ConcurrentDictionary<Key, Value> cd = new ConcurrentDictionary<Key, Value>(pairs);
         return new SerializableConcurrentDictioanry<Key, Value>(cd);
     }
@@ -85,7 +85,7 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
     private readonly ConcurrentDictionary<Key, Value> _internal;        //느려터짐..
 
     //Type Restricted Funcs
-    public Value this[Key key] { get => throw new System.NotImplementedException(); set => throw new System.NotImplementedException(); }
+    public Value this[Key key] { get => _internal[key]; set => _internal[key] = value; }
 
     public bool TryGetValue(Key key, out Value value)
     {
@@ -137,6 +137,11 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
     {
         return _internal.AddOrUpdate(key, addValueFactory, updateValueFactory);
     }
+
+    public bool TryUpdate(Key key, Value newValue, Value oldValue)
+    {
+        return _internal.TryUpdate(key, newValue, oldValue);
+    }
     public bool Contains(KeyValuePair<Key, Value> item)
     {
         return _internal.ContainsKey(item.Key);
@@ -145,12 +150,11 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
     {
         return _internal.ContainsKey(key);
     }
+
     public void Clear()
     {
         _internal.Clear();
     }
-
-
 
     public bool Remove(Key key)
     {
@@ -164,19 +168,24 @@ public class SerializableConcurrentDictioanry<Key, Value> : ISerializationCallba
 
     public bool TryRemove(Key key, out Value value)
     {
-        return _internal.Remove(key, out value);
+        return _internal.TryRemove(key, out value);
     }
 
     public bool TryRemove(KeyValuePair<Key, Value> item, out Value value)
     {
-        return _internal.Remove(item.Key, out value);
+        return _internal.TryRemove(item.Key, out value);
     }
 
 
 
     public void CopyTo(KeyValuePair<Key, Value>[] array, int arrayIndex)
     {
-        
+       
+    }
+
+    public KeyValuePair<Key, Value>[] ToArray() 
+    {
+        return _internal.ToArray();
     }
 
     IEnumerator IEnumerable.GetEnumerator()
